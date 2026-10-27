@@ -11,10 +11,12 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.ar.core.Config
 import com.ifpr.androidapptemplatear.databinding.FragmentCameraBinding
 import io.github.sceneview.ar.ArSceneView
@@ -29,6 +31,7 @@ class CameraFragment : Fragment() {
     private lateinit var sceneView: ArSceneView
     private lateinit var modelNode: ArModelNode
     private lateinit var placeButton: ExtendedFloatingActionButton
+    private lateinit var btnChangeModel: FloatingActionButton
 
     private lateinit var sharedViewModel: SharedModelViewModel
 
@@ -64,9 +67,14 @@ class CameraFragment : Fragment() {
         }
 
         placeButton = view.findViewById(R.id.place)
+        btnChangeModel = view.findViewById(R.id.btnChangeModel)
 
         placeButton.setOnClickListener {
             placeModel()
+        }
+
+        btnChangeModel.setOnClickListener {
+            mostrarDialogoEscolherPet()
         }
 
         return view
@@ -122,6 +130,23 @@ class CameraFragment : Fragment() {
 
     private fun initAR() {
         loadModel(currentModelFile)
+    }
+
+    /**
+     * Exibe diálogo para o usuário escolher qual pet (modelo 3D)
+     * mostrar na câmera AR.
+     */
+    private fun mostrarDialogoEscolherPet() {
+        val nomes = arrayOf("🐱 Gato", "🐕 Golden", "🐶 Cachorro", "🔬 Neutrófilo")
+        val arquivos = arrayOf("gato_g.glb", "golden.glb", "cachorro_g.glb", "neutrofilo.glb")
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("Escolher Pet")
+            .setItems(nomes) { _, which ->
+                currentModelFile = arquivos[which]
+                sharedViewModel.selectModel(currentModelFile)
+            }
+            .show()
     }
 
     /**

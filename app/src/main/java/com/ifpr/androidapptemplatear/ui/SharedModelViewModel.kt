@@ -1,6 +1,6 @@
-package com.ifpr.androidapptemplatear.ui
+21' -
 
-import androidx.lifecycle.MutableLiveData
+package com.ifpr.androidapptemplatear.uiimport androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 
 class SharedModelViewModel : ViewModel() {
@@ -9,4 +9,4 @@ class SharedModelViewModel : ViewModel() {
     fun selectModel(modelPath: String) {
         selectedModel.value = modelPath
     }
-}
+}78
