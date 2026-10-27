@@ -4,6 +4,7 @@ import androidx.fragment.app.Fragment
 import com.ifpr.androidapptemplatear.R
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -36,6 +37,10 @@ class CameraFragment : Fragment() {
     private var currentModelFile: String = "neutrofilo.glb"
 
     private var _binding: FragmentCameraBinding? = null
+
+    // Som e pontuação para captura de pets na RA
+    private var mediaPlayer: MediaPlayer? = null
+    private var capturasPetsRA = 0
 
     // This property is only valid between onCreateView and
     // onDestroyView.
@@ -70,6 +75,8 @@ class CameraFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+        mediaPlayer?.release()
+        mediaPlayer = null
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -117,6 +124,35 @@ class CameraFragment : Fragment() {
         loadModel(currentModelFile)
     }
 
+    /**
+     * Toca o som de captura (latido) quando o pet é tocado na RA.
+     */
+    private fun tocarSomCaptura() {
+        try {
+            mediaPlayer?.release()
+            mediaPlayer = MediaPlayer.create(requireContext(), R.raw.latido_captura)
+            mediaPlayer?.setOnCompletionListener { mp ->
+                mp.release()
+            }
+            mediaPlayer?.start()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * Retorna o nome amigável do pet com base no nome
+     * do arquivo do modelo 3D.
+     */
+    private fun nomeDoPet(fileName: String): String {
+        return when {
+            fileName.contains("gato", ignoreCase = true) -> "🐱 Gato"
+            fileName.contains("golden", ignoreCase = true) -> "🐕 Golden"
+            fileName.contains("cachorro", ignoreCase = true) -> "🐶 Cachorro"
+            else -> "🐾 Pet"
+        }
+    }
+
     private fun loadModel(fileName: String) {
         try {
             sceneView.removeChild(modelNode)
@@ -136,6 +172,17 @@ class CameraFragment : Fragment() {
             isEditable = true
             isScaleEditable = false
 
+            // Detectar toque no modelo 3D para capturar o pet
+            onTap = { _, _ ->
+                capturasPetsRA++
+                val nome = nomeDoPet(fileName)
+                tocarSomCaptura()
+                Toast.makeText(
+                    requireContext(),
+                    "$nome capturado! 🎉 Total: $capturasPetsRA",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
         }
 
         sceneView.addChild(modelNode)
@@ -156,3 +203,4 @@ class CameraFragment : Fragment() {
         }
     }
 }
+

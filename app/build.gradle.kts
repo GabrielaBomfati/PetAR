@@ -68,6 +68,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.glide)
     implementation(libs.firebase.database.ktx)
+    implementation(libs.play.services.location)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.junit)
