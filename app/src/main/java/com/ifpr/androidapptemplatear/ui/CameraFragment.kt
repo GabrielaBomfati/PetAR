@@ -46,6 +46,9 @@ class CameraFragment : Fragment() {
     private var mediaPlayer: MediaPlayer? = null
     private var capturasPetsRA = 0
 
+    // Impede carregamentos simultâneos que causam crash no Filament
+    private var isLoadingModel = false
+
     // This property is only valid between onCreateView and onDestroyView.
     private val binding get() = _binding!!
 
@@ -201,12 +204,17 @@ class CameraFragment : Fragment() {
     }
 
     private fun loadModel(fileName: String) {
-        // CORREÇÃO: Remove nó anterior com segurança antes de criar novo
+        // Ignora se já está carregando — evita crash por carregamento simultâneo no Filament
+        if (isLoadingModel) {
+            Log.w("CameraFragment", "Já está carregando um modelo, aguarde.")
+            return
+        }
+        isLoadingModel = true
+
+        // Remove o nó antigo SEM chamar destroy() — destroy() durante carregamento
+        // assíncrono de textura causa crash nativo no libgltfio-jni.so (Filament)
         try {
-            modelNode?.let {
-                sceneView.removeChild(it)
-                it.destroy()
-            }
+            modelNode?.let { sceneView.removeChild(it) }
         } catch (e: Exception) {
             Log.w("CameraFragment", "Aviso ao remover modelNode anterior: ${e.message}")
         }
@@ -216,6 +224,7 @@ class CameraFragment : Fragment() {
         val filePath = getFilePath(requireContext(), fileName)
         if (filePath == null) {
             Log.e("CameraFragment", "Arquivo não encontrado: $fileName")
+            isLoadingModel = false
             if (isAdded) {
                 Toast.makeText(
                     requireContext(),
@@ -233,7 +242,8 @@ class CameraFragment : Fragment() {
                 glbFileLocation = filePath,
                 centerOrigin = Position(0f, 0f, -1f), // CORREÇÃO: posição à frente do usuário
             ) {
-                // Callback executado na thread principal após carregamento
+                // Callback na thread principal após carregamento completo
+                isLoadingModel = false
                 if (isAdded) {
                     sceneView.planeRenderer.isVisible = true
                     Log.d("CameraFragment", "Modelo carregado com sucesso: $fileName")
