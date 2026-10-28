@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -23,13 +24,13 @@ import io.github.sceneview.ar.ArSceneView
 import io.github.sceneview.ar.node.ArModelNode
 import io.github.sceneview.ar.node.PlacementMode
 import io.github.sceneview.math.Position
-import okio.IOException
 import java.io.File
 
 class CameraFragment : Fragment() {
 
     private lateinit var sceneView: ArSceneView
-    private lateinit var modelNode: ArModelNode
+    // modelNode é nullable para evitar UninitializedPropertyAccessException
+    private var modelNode: ArModelNode? = null
     private lateinit var placeButton: ExtendedFloatingActionButton
     private lateinit var btnChangeModel: FloatingActionButton
 
@@ -45,8 +46,7 @@ class CameraFragment : Fragment() {
     private var mediaPlayer: MediaPlayer? = null
     private var capturasPetsRA = 0
 
-    // This property is only valid between onCreateView and
-    // onDestroyView.
+    // This property is only valid between onCreateView and onDestroyView.
     private val binding get() = _binding!!
 
     override fun onCreateView(
@@ -54,12 +54,7 @@ class CameraFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        super.onCreate(savedInstanceState)
-        sharedViewModel = ViewModelProvider(requireActivity())[SharedModelViewModel::class.java]
-        sharedViewModel.selectedModel.observe(viewLifecycleOwner) { path ->
-            loadModel(path)
-        }
-
+        // CORREÇÃO: super.onCreate não deve ser chamado aqui, usa super.onCreateView
         val view = inflater.inflate(R.layout.fragment_camera, container, false)
 
         sceneView = view.findViewById<ArSceneView?>(R.id.sceneView).apply {
@@ -80,24 +75,46 @@ class CameraFragment : Fragment() {
         return view
     }
 
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+
+        // CORREÇÃO: Observer registrado aqui (após onCreateView), usando viewLifecycleOwner
+        // que só existe a partir deste ponto. sceneView também já está pronto.
+        sharedViewModel = ViewModelProvider(requireActivity())[SharedModelViewModel::class.java]
+        sharedViewModel.selectedModel.observe(viewLifecycleOwner) { path ->
+            if (!path.isNullOrBlank()) {
+                currentModelFile = path
+                loadModel(path)
+            }
+        }
+
+        checkCameraPermission()
+    }
+
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
         mediaPlayer?.release()
         mediaPlayer = null
-    }
-
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-
-        checkCameraPermission()
+        // Limpa o nó do modelo ao destruir a view
+        try {
+            modelNode?.let { sceneView.removeChild(it) }
+            modelNode?.destroy()
+            modelNode = null
+        } catch (e: Exception) {
+            Log.e("CameraFragment", "Erro ao destruir modelNode: ${e.message}")
+        }
     }
 
     private fun placeModel() {
-        modelNode.anchor()
-        modelNode.isEditable = true
-        modelNode.isScaleEditable = false
-
+        // CORREÇÃO: Verifica se modelNode foi inicializado antes de usar
+        val node = modelNode ?: run {
+            Toast.makeText(requireContext(), "Modelo ainda carregando...", Toast.LENGTH_SHORT).show()
+            return
+        }
+        node.anchor()
+        node.isEditable = true
+        node.isScaleEditable = false
         sceneView.planeRenderer.isVisible = false
     }
 
@@ -115,6 +132,7 @@ class CameraFragment : Fragment() {
         }
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onRequestPermissionsResult(
         requestCode: Int, permissions: Array<out String>, grantResults: IntArray
     ) {
@@ -124,7 +142,9 @@ class CameraFragment : Fragment() {
         ) {
             initAR()
         } else {
-            Toast.makeText(requireContext(), "Permissão de câmera negada", Toast.LENGTH_LONG).show()
+            if (isAdded) {
+                Toast.makeText(requireContext(), "Permissão de câmera negada", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -143,8 +163,10 @@ class CameraFragment : Fragment() {
         AlertDialog.Builder(requireContext())
             .setTitle("Escolher Pet")
             .setItems(nomes) { _, which ->
-                currentModelFile = arquivos[which]
-                sharedViewModel.selectModel(currentModelFile)
+                val arquivo = arquivos[which]
+                currentModelFile = arquivo
+                // Atualiza via ViewModel (o observer faz o loadModel)
+                sharedViewModel.selectModel(arquivo)
             }
             .show()
     }
@@ -161,7 +183,7 @@ class CameraFragment : Fragment() {
             }
             mediaPlayer?.start()
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("CameraFragment", "Erro ao tocar som: ${e.message}")
         }
     }
 
@@ -179,53 +201,88 @@ class CameraFragment : Fragment() {
     }
 
     private fun loadModel(fileName: String) {
+        // CORREÇÃO: Remove nó anterior com segurança antes de criar novo
         try {
-            sceneView.removeChild(modelNode)
+            modelNode?.let {
+                sceneView.removeChild(it)
+                it.destroy()
+            }
         } catch (e: Exception) {
+            Log.w("CameraFragment", "Aviso ao remover modelNode anterior: ${e.message}")
+        }
+        modelNode = null
 
+        // CORREÇÃO: Valida o caminho do arquivo antes de tentar carregar
+        val filePath = getFilePath(requireContext(), fileName)
+        if (filePath == null) {
+            Log.e("CameraFragment", "Arquivo não encontrado: $fileName")
+            if (isAdded) {
+                Toast.makeText(
+                    requireContext(),
+                    "Erro: modelo '$fileName' não encontrado.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            return
         }
 
-        modelNode = ArModelNode(sceneView.engine, PlacementMode.INSTANT).apply {
-            loadModelGlbAsync(
-                glbFileLocation = getFilePath(requireContext(),fileName),
-                centerOrigin = Position(0f,0f,1f),
+        Log.d("CameraFragment", "Carregando modelo: $filePath")
 
+        val newNode = ArModelNode(sceneView.engine, PlacementMode.INSTANT).apply {
+            loadModelGlbAsync(
+                glbFileLocation = filePath,
+                centerOrigin = Position(0f, 0f, -1f), // CORREÇÃO: posição à frente do usuário
             ) {
-                sceneView.planeRenderer.isVisible = true
+                // Callback executado na thread principal após carregamento
+                if (isAdded) {
+                    sceneView.planeRenderer.isVisible = true
+                    Log.d("CameraFragment", "Modelo carregado com sucesso: $fileName")
+                }
             }
-            // Permitir interação com o modelo
+
             isEditable = true
             isScaleEditable = false
 
             // Detectar toque no modelo 3D para capturar o pet
             onTap = { _, _ ->
-                capturasPetsRA++
-                val nome = nomeDoPet(fileName)
-                tocarSomCaptura()
-                Toast.makeText(
-                    requireContext(),
-                    "$nome capturado! 🎉 Total: $capturasPetsRA",
-                    Toast.LENGTH_SHORT
-                ).show()
+                if (isAdded) {
+                    capturasPetsRA++
+                    val nome = nomeDoPet(fileName)
+                    tocarSomCaptura()
+                    Toast.makeText(
+                        requireContext(),
+                        "$nome capturado! 🎉 Total: $capturasPetsRA",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             }
         }
 
-        sceneView.addChild(modelNode)
+        modelNode = newNode
+        sceneView.addChild(newNode)
     }
 
-    private fun getFilePath(context: Context?, fileName: String): String {
-        try {
-            context?.assets?.open(fileName)?.close() // Tenta abrir o arquivo dos assets
-            return fileName // Se abrir sem erro, presume-se que está nos assets
-        } catch (e: IOException) {
-            // Arquivo não encontrado nos assets, agora vamos procurar no filesDir
-            val internalFile = File(context?.filesDir, fileName)
+    /**
+     * Retorna o caminho do arquivo GLB para uso no ARSceneView.
+     * Busca primeiro nos assets, depois no filesDir interno.
+     * Retorna null se o arquivo não for encontrado em nenhum lugar.
+     */
+    private fun getFilePath(context: Context?, fileName: String): String? {
+        if (context == null) return null
+        return try {
+            // Tenta abrir nos assets para verificar se existe
+            context.assets.open(fileName).close()
+            // Retorna apenas o nome; ARSceneView busca nos assets automaticamente
+            fileName
+        } catch (e: Exception) {
+            // Não está nos assets — procura no filesDir interno
+            val internalFile = File(context.filesDir, fileName)
             if (internalFile.exists()) {
-                return  Uri.fromFile(internalFile).toString()
+                Uri.fromFile(internalFile).toString()
             } else {
-                return "Arquivo não encontrado em assets nem em filesDir: $fileName"
+                // Arquivo não encontrado em lugar nenhum
+                null
             }
         }
     }
 }
-
