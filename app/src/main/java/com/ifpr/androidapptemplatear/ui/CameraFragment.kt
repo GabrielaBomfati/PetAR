@@ -38,8 +38,7 @@ class CameraFragment : Fragment() {
 
     private val CAMERA_PERMISSION_CODE = 1001
 
-    private var currentModelFile: String = "neutrofilo.glb"
-
+    private var currentModelFile: String? = null
     private var _binding: FragmentCameraBinding? = null
 
     // Som e pontuação para captura de pets na RA
@@ -119,6 +118,13 @@ class CameraFragment : Fragment() {
         node.isEditable = true
         node.isScaleEditable = false
         sceneView.planeRenderer.isVisible = false
+        Log.d("CameraFragment", "PLACE executado para: $currentModelFile")
+
+        Toast.makeText(
+            requireContext(),
+            "Place executado: $currentModelFile",
+            Toast.LENGTH_LONG
+        ).show()
     }
 
     private fun checkCameraPermission() {
@@ -152,7 +158,7 @@ class CameraFragment : Fragment() {
     }
 
     private fun initAR() {
-        loadModel(currentModelFile)
+        sceneView.planeRenderer.isVisible = true
     }
 
     /**
@@ -160,8 +166,8 @@ class CameraFragment : Fragment() {
      * mostrar na câmera AR.
      */
     private fun mostrarDialogoEscolherPet() {
-        val nomes = arrayOf("🐱 Gato", "🐕 Golden", "🐶 Cachorro", "🔬 Neutrófilo")
-        val arquivos = arrayOf("gato_g.glb", "golden.glb", "cachorro_g.glb", "neutrofilo.glb")
+        val nomes = arrayOf("🐱 Gato", "🐕 Golden", "🐶 Cachorro",)
+        val arquivos = arrayOf("gato_g.glb", "golden.glb", "cachorro_g.glb")
 
         AlertDialog.Builder(requireContext())
             .setTitle("Escolher Pet")
@@ -177,14 +183,31 @@ class CameraFragment : Fragment() {
     /**
      * Toca o som de captura (latido) quando o pet é tocado na RA.
      */
-    private fun tocarSomCaptura() {
+    private fun tocarSomCaptura(fileName: String) {
         try {
             mediaPlayer?.release()
-            mediaPlayer = MediaPlayer.create(requireContext(), R.raw.latido_captura)
+
+            val som = if (fileName == "gato_g.glb") {
+                R.raw.miado_captura
+            } else {
+                R.raw.latido_captura
+            }
+            Log.d(
+                    "CameraFragment",
+            "Animal: $fileName | Som: ${if (som == R.raw.miado_captura) "MIADO" else "LATIDO"}"
+            )
+
+            mediaPlayer = MediaPlayer.create(requireContext(), som)
+
             mediaPlayer?.setOnCompletionListener { mp ->
                 mp.release()
+                if (mediaPlayer === mp) {
+                    mediaPlayer = null
+                }
             }
+
             mediaPlayer?.start()
+
         } catch (e: Exception) {
             Log.e("CameraFragment", "Erro ao tocar som: ${e.message}")
         }
@@ -240,8 +263,12 @@ class CameraFragment : Fragment() {
         val newNode = ArModelNode(sceneView.engine, PlacementMode.INSTANT).apply {
             loadModelGlbAsync(
                 glbFileLocation = filePath,
-                centerOrigin = Position(0f, 0f, -1f), // CORREÇÃO: posição à frente do usuário
-            ) {
+                centerOrigin = if (fileName == "cachorro_g.glb") {
+                    Position(0f, 0f, 0f)
+                } else {
+                    Position(0f, 0f, -1f)
+                },
+            ){
                 // Callback na thread principal após carregamento completo
                 isLoadingModel = false
                 if (isAdded) {
@@ -258,7 +285,7 @@ class CameraFragment : Fragment() {
                 if (isAdded) {
                     capturasPetsRA++
                     val nome = nomeDoPet(fileName)
-                    tocarSomCaptura()
+                    tocarSomCaptura(fileName)
                     Toast.makeText(
                         requireContext(),
                         "$nome capturado! 🎉 Total: $capturasPetsRA",

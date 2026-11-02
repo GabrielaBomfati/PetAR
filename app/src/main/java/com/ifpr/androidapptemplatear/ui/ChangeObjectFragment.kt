@@ -282,19 +282,32 @@ class ChangeObjectFragment : Fragment() {
     /**
      * Toca o som de captura do pet.
      */
-    private fun tocarSomCaptura() {
+    private fun tocarSomCaptura(arquivo: String) {
         try {
             mediaPlayer?.release()
-            mediaPlayer = MediaPlayer.create(requireContext(), R.raw.latido_captura)
+            mediaPlayer = null
+
+            val som = if (arquivo == "gato_g.glb") {
+                R.raw.miado_captura
+            } else {
+                R.raw.latido_captura
+            }
+
+            mediaPlayer = MediaPlayer.create(requireContext(), som)
+
             mediaPlayer?.setOnCompletionListener { mp ->
                 mp.release()
+                if (mediaPlayer === mp) {
+                    mediaPlayer = null
+                }
             }
+
             mediaPlayer?.start()
+
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
-
     /**
      * Exibe animação visual de captura na tela.
      */
@@ -341,9 +354,8 @@ class ChangeObjectFragment : Fragment() {
                 score++
                 scoreValue.text = score.toString()
 
-                tocarSomCaptura()
+                tocarSomCaptura(arquivo)
                 exibirAnimacaoCaptura(nome)
-
                 Toast.makeText(
                     requireContext(),
                     "🐾 $nome capturado! Pontos: $score",
@@ -369,4 +381,4 @@ class ChangeObjectFragment : Fragment() {
         mediaPlayer = null
         mapWebView.destroy()
     }
-}
+}
