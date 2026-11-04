@@ -1,5 +1,4 @@
 
-<?xml version="1.0" encoding="utf-8"?>
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -8,7 +7,6 @@
     android:layout_height="match_parent"
     tools:context=".ui.CameraFragment">
 
-    <!-- Container da visualização 3D ou AR -->
     <FrameLayout
         android:id="@+id/sceneContainer"
         android:layout_width="0dp"
@@ -18,7 +16,6 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- Logo do aplicativo -->
     <ImageView
         android:id="@+id/titleImage"
         android:layout_width="150dp"
@@ -33,7 +30,6 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- Botão para escolher o animal -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/btnChangeModel"
         android:layout_width="wrap_content"
@@ -45,7 +41,6 @@
         app:layout_constraintBottom_toTopOf="@id/place"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- Botão para posicionar o animal -->
     <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
         android:id="@+id/place"
         android:layout_width="wrap_content"
