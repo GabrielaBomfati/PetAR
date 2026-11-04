@@ -685,7 +685,11 @@ class CameraFragment : Fragment() {
 
                 val node = ModelNode(
                     modelInstance = instance,
-                    scaleToUnits = if (isAr) 0.5f else 1.5f,
+                    scaleToUnits = when {
+                        isAr -> 0.5f
+                        fileName == "cachorro_g.glb" -> 0.5f
+                        else -> 1.5f
+                    },
                     centerOrigin = Position(0f, 0f, 0f)
                 )
 
