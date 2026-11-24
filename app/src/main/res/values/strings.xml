@@ -11,4 +11,21 @@
     <string name="camera">camera</string>
     <string name="change">Mapa</string>
     <string name="profile">profile</string>
+    <string name="pet_cat">Gato</string>
+    <string name="pet_golden">Golden</string>
+    <string name="pet_dog">Cachorro</string>
+    <string name="treat_icon" translatable="false">🦴</string>
+    <string name="encounter_prompt">Lance um petisco para atrair e capturar o pet.</string>
+    <string name="encounter_missed">O pet ainda não se aproximou.</string>
+    <string name="throw_treat">Lançar petisco</string>
+    <plurals name="treats_remaining">
+        <item quantity="one">%d tentativa restante</item>
+        <item quantity="other">%d tentativas restantes</item>
+    </plurals>
+    <string name="map_score_label">🐾 Pontos</string>
+    <string name="pet_captured">🎉 %1$s capturado! +%2$d pontos</string>
+    <string name="game_over_title">Game Over</string>
+    <string name="game_over_reason">%1$s fugiu após %2$d tentativas sem se aproximar do petisco.</string>
+    <string name="game_over_score">Pontuação final: %d</string>
+    <string name="play_again">Jogar novamente</string>
 </resources>

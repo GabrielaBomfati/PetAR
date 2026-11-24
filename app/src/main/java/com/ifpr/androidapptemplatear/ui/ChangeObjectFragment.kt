@@ -5,7 +5,6 @@ import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
-import android.location.Location
 import android.media.MediaPlayer
 import android.os.Bundle
 import android.os.Handler
@@ -20,28 +19,31 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.LinearLayout
-import android.widget.TextView
-import android.widget.Toast
-import androidx.core.app.ActivityCompat
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.view.isInvisible
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
-import com.google.android.gms.location.FusedLocationProviderClient
+import androidx.fragment.app.activityViewModels
 import com.google.android.gms.location.LocationServices
 import com.ifpr.androidapptemplatear.R
+import com.ifpr.androidapptemplatear.databinding.FragmentChangeobjectBinding
+import kotlin.random.Random
 
 class ChangeObjectFragment : Fragment() {
 
-    private lateinit var mapWebView: WebView
-    private lateinit var scoreValue: TextView
-    private lateinit var scorePanel: LinearLayout
-    private lateinit var captureToast: TextView
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
-
+    private var binding: FragmentChangeobjectBinding? = null
+    private val sharedViewModel: SharedModelViewModel by activityViewModels()
     private var mediaPlayer: MediaPlayer? = null
-    private var score = 0
-
-    private val LOCATION_PERMISSION_CODE = 2001
+    private val handler = Handler(Looper.getMainLooper())
+    private val hideCaptureToast = Runnable { binding?.captureToast?.isVisible = false }
+    private val locationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        if (sharedViewModel.mapRound != null) return@registerForActivityResult
+        if (permissions.values.any { it }) obterLocalizacaoECarregarMapa()
+        else iniciarPartida(-23.5505, -46.6333)
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -61,19 +63,32 @@ class ChangeObjectFragment : Fragment() {
     ) {
         super.onViewCreated(view, savedInstanceState)
 
-        mapWebView = view.findViewById(R.id.mapWebView)
-        scoreValue = view.findViewById(R.id.scoreValue)
-        scorePanel = view.findViewById(R.id.scorePanel)
-        captureToast = view.findViewById(R.id.captureToast)
-
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(requireActivity())
+        val views = FragmentChangeobjectBinding.bind(view)
+        binding = views
 
         // Aplicar backgrounds arredondados programaticamente
-        aplicarBackgroundArredondado(scorePanel, Color.parseColor("#CC1B1B2F"))
-        aplicarBackgroundArredondado(captureToast, Color.parseColor("#CC2E7D32"))
+        aplicarBackgroundArredondado(views.scorePanel, Color.parseColor("#CC1B1B2F"))
+        aplicarBackgroundArredondado(views.captureToast, Color.parseColor("#CC2E7D32"))
+        aplicarBackgroundArredondado(views.encounterCard, Color.parseColor("#1B1B2F"))
 
-        configurarWebView()
-        verificarPermissaoLocalizacao()
+        configurarWebView(views.mapWebView)
+        views.encounterAction.setOnClickListener {
+            if (!views.encounterAction.isEnabled) return@setOnClickListener
+            val round = sharedViewModel.mapRound ?: return@setOnClickListener
+            if (round.escapedPet != null) {
+                iniciarPartida(round.latitude, round.longitude)
+            } else {
+                lancarPetisco(views, round)
+            }
+        }
+
+        val round = sharedViewModel.mapRound
+        if (round == null) {
+            verificarPermissaoLocalizacao()
+        } else {
+            if (round.escapedPet == null) carregarMapa(views.mapWebView, round)
+            atualizarTela(views, round)
+        }
     }
 
     /**
@@ -89,7 +104,7 @@ class ChangeObjectFragment : Fragment() {
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private fun configurarWebView() {
+    private fun configurarWebView(mapWebView: WebView) {
         mapWebView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -100,111 +115,52 @@ class ChangeObjectFragment : Fragment() {
         mapWebView.webViewClient = WebViewClient()
         mapWebView.webChromeClient = WebChromeClient()
 
-        // Interface JavaScript para comunicar capturas do mapa para o app
+        // O mapa informa qual marcador o jogador tocou.
         mapWebView.addJavascriptInterface(
-            MapJsInterface(),
+            MapJsInterface(mapWebView),
             "AndroidPetAR"
         )
     }
 
     private fun verificarPermissaoLocalizacao() {
-        if (ContextCompat.checkSelfPermission(
-                requireContext(),
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(
-                requireActivity(),
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                ),
-                LOCATION_PERMISSION_CODE
-            )
-        } else {
-            obterLocalizacaoECarregarMapa()
-        }
-    }
-
-    @Deprecated("Deprecated in Java")
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == LOCATION_PERMISSION_CODE &&
-            grantResults.isNotEmpty() &&
-            grantResults[0] == PackageManager.PERMISSION_GRANTED
+        val permissions = arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+        if (permissions.any {
+                ContextCompat.checkSelfPermission(requireContext(), it) == PackageManager.PERMISSION_GRANTED
+            }
         ) {
             obterLocalizacaoECarregarMapa()
         } else {
-            // Sem permissão: usa localização padrão (São Paulo)
-            carregarMapa(-23.5505, -46.6333)
+            locationPermission.launch(permissions)
         }
     }
 
     @SuppressLint("MissingPermission")
     private fun obterLocalizacaoECarregarMapa() {
-        fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
-            if (location != null) {
-                carregarMapa(location.latitude, location.longitude)
-            } else {
-                // Fallback: localização padrão
-                carregarMapa(-23.5505, -46.6333)
+        val views = binding ?: return
+        LocationServices.getFusedLocationProviderClient(requireActivity()).lastLocation
+            .addOnCompleteListener { task ->
+                if (binding !== views || sharedViewModel.mapRound != null) return@addOnCompleteListener
+                val location = if (task.isSuccessful) task.result else null
+                iniciarPartida(location?.latitude ?: -23.5505, location?.longitude ?: -46.6333)
             }
-        }.addOnFailureListener {
-            carregarMapa(-23.5505, -46.6333)
-        }
     }
 
-    /**
-     * Carrega o mapa OpenStreetMap via Leaflet.js com marcadores
-     * de pets aleatórios ao redor da posição do usuário.
-     */
-    private fun carregarMapa(lat: Double, lng: Double) {
-        val petModels = listOf(
-            PetInfo("🐱", "Gato", "gato_g.glb", "#FF6B9D"),
-            PetInfo("🐕", "Golden", "golden.glb", "#FFB347"),
-            PetInfo("🐶", "Cachorro", "cachorro_g.glb", "#87CEEB")
-        )
+    private fun iniciarPartida(lat: Double, lng: Double) {
+        val views = binding ?: return
+        val round = MapRound(lat, lng)
+        sharedViewModel.mapRound = round
+        carregarMapa(views.mapWebView, round)
+        atualizarTela(views, round)
+    }
 
-        // Gera posições aleatórias ao redor do usuário
-        val markersJs = StringBuilder()
-        val random = java.util.Random()
-
-        for (i in 0 until 15) {
-            val pet = petModels[i % petModels.size]
-            val offsetLat = (random.nextDouble() - 0.5) * 0.008
-            val offsetLng = (random.nextDouble() - 0.5) * 0.008
-            val petLat = lat + offsetLat
-            val petLng = lng + offsetLng
-
-            markersJs.append("""
-                (function() {
-                    var petIcon = L.divIcon({
-                        html: '<div style="font-size:32px;text-align:center;filter:drop-shadow(2px 2px 4px rgba(0,0,0,0.5));cursor:pointer;">${pet.emoji}</div>',
-                        className: 'pet-marker',
-                        iconSize: [44, 44],
-                        iconAnchor: [22, 22]
-                    });
-                    var m = L.marker([$petLat, $petLng], {icon: petIcon}).addTo(map);
-                    m.bindPopup('<div style="text-align:center;font-size:14px;"><b>${pet.emoji} ${pet.nome}</b><br><span style="color:#666;">Toque para capturar!</span></div>');
-                    m.on('click', function() {
-                        AndroidPetAR.capturarPet('${pet.nome}', '${pet.arquivo}');
-                        map.removeLayer(m);
-                        
-                        // Efeito visual de captura no mapa
-                        var captureCircle = L.circle([$petLat, $petLng], {
-                            radius: 20,
-                            color: '${pet.cor}',
-                            fillColor: '${pet.cor}',
-                            fillOpacity: 0.6
-                        }).addTo(map);
-                        setTimeout(function() { map.removeLayer(captureCircle); }, 800);
-                    });
-                })();
-            """)
+    private fun carregarMapa(mapWebView: WebView, round: MapRound) {
+        val lat = round.latitude
+        val lng = round.longitude
+        val markersJs = round.pets.joinToString("\n") { pet ->
+            "addPet(${pet.id}, ${pet.latitude}, ${pet.longitude}, '${pet.type.emoji}', '${pet.type.color}');"
         }
 
         val html = """
@@ -264,6 +220,40 @@ class ChangeObjectFragment : Fragment() {
                     }).addTo(map);
                     
                     // Marcadores de pets
+                    const pets = new Map();
+                    const roundId = '${round.id}';
+
+                    function addPet(id, lat, lng, emoji, color) {
+                        const icon = L.divIcon({
+                            html: '<div style="font-size:32px;text-align:center;filter:drop-shadow(2px 2px 4px rgba(0,0,0,0.5));">' + emoji + '</div>',
+                            className: 'pet-marker',
+                            iconSize: [44, 44],
+                            iconAnchor: [22, 22]
+                        });
+                        const marker = L.marker([lat, lng], {icon: icon}).addTo(map);
+                        pets.set(id, {marker, color});
+                        marker.on('click', function() { AndroidPetAR.abrirEncontro(roundId, id); });
+                    }
+
+                    function removePet(id, captured) {
+                        const pet = pets.get(id);
+                        if (!pet) return;
+                        map.removeLayer(pet.marker);
+                        pets.delete(id);
+
+                        if (captured) {
+                            const circle = L.circle(pet.marker.getLatLng(), {
+                                radius: 20,
+                                color: pet.color,
+                                fillColor: pet.color,
+                                fillOpacity: 0.6
+                            }).addTo(map);
+                            setTimeout(function() { map.removeLayer(circle); }, 800);
+                        } else {
+                            map.stop();
+                        }
+                    }
+
                     $markersJs
                 </script>
             </body>
@@ -279,14 +269,89 @@ class ChangeObjectFragment : Fragment() {
         )
     }
 
-    /**
-     * Toca o som de captura do pet.
-     */
+    private fun atualizarTela(views: FragmentChangeobjectBinding, round: MapRound) {
+        views.scoreValue.text = round.score.toString()
+        val escapedPet = round.escapedPet
+        val pet = escapedPet ?: round.encounter
+        views.mapWebView.isInvisible = escapedPet != null
+        views.scorePanel.isVisible = escapedPet == null
+        views.mapWebView.importantForAccessibility = if (pet == null) {
+            View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+        } else {
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        }
+        views.encounterOverlay.isVisible = pet != null
+        if (pet == null) return
+
+        val name = getString(pet.type.nameRes)
+        views.encounterAction.isEnabled = true
+        views.petIcon.text = pet.type.emoji
+        views.treatIcon.isVisible = escapedPet == null
+        views.treatIcon.translationY = 0f
+        views.treatIcon.alpha = 0.6f
+
+        if (escapedPet != null) {
+            handler.removeCallbacks(hideCaptureToast)
+            views.captureToast.clearAnimation()
+            views.captureToast.isVisible = false
+            mediaPlayer?.release()
+            mediaPlayer = null
+            views.encounterTitle.setText(R.string.game_over_title)
+            views.encounterMessage.text = getString(R.string.game_over_reason, name, MapRound.MAX_TREATS)
+            views.encounterStatus.text = getString(R.string.game_over_score, round.score)
+            views.encounterAction.setText(R.string.play_again)
+        } else {
+            views.encounterTitle.text = name
+            views.encounterMessage.setText(
+                if (round.treatsRemaining == MapRound.MAX_TREATS) R.string.encounter_prompt
+                else R.string.encounter_missed
+            )
+            views.encounterStatus.text = resources.getQuantityString(
+                R.plurals.treats_remaining, round.treatsRemaining, round.treatsRemaining
+            )
+            views.encounterAction.setText(R.string.throw_treat)
+        }
+    }
+
+    private fun lancarPetisco(views: FragmentChangeobjectBinding, round: MapRound) {
+        val pet = round.encounter ?: return
+        val result = round.throwTreat(Random.nextDouble() < PET_APPROACH_CHANCE) ?: return
+        views.encounterAction.isEnabled = false
+        views.treatIcon.alpha = 1f
+        views.treatIcon.animate()
+            .translationY(views.petIcon.y + views.petIcon.height / 2f - views.treatIcon.y)
+            .alpha(0f)
+            .setDuration(400)
+            .withEndAction {
+                if (binding !== views || sharedViewModel.mapRound !== round) return@withEndAction
+                if (result != ThrowResult.MISSED) {
+                    val captured = result == ThrowResult.CAPTURED
+                    views.mapWebView.evaluateJavascript(
+                        "typeof removePet === 'function' && removePet(${pet.id}, $captured);"
+                    ) { value ->
+                        if (captured && value == "false" &&
+                            binding === views && sharedViewModel.mapRound === round &&
+                            round.escapedPet == null
+                        ) {
+                            carregarMapa(views.mapWebView, round)
+                        }
+                    }
+                    if (captured) {
+                        tocarSomCaptura()
+                        exibirAnimacaoCaptura(views, pet.type)
+                    }
+                }
+                atualizarTela(views, round)
+            }
+            .start()
+    }
+
     private fun tocarSomCaptura() {
         try {
             mediaPlayer?.release()
             mediaPlayer = MediaPlayer.create(requireContext(), R.raw.latido_captura)
             mediaPlayer?.setOnCompletionListener { mp ->
+                if (mediaPlayer === mp) mediaPlayer = null
                 mp.release()
             }
             mediaPlayer?.start()
@@ -298,9 +363,12 @@ class ChangeObjectFragment : Fragment() {
     /**
      * Exibe animação visual de captura na tela.
      */
-    private fun exibirAnimacaoCaptura(nomePet: String) {
-        captureToast.text = "🎉 $nomePet capturado!"
-        captureToast.visibility = View.VISIBLE
+    private fun exibirAnimacaoCaptura(views: FragmentChangeobjectBinding, pet: PetType) {
+        val captureToast = views.captureToast
+        captureToast.text = getString(
+            R.string.pet_captured, getString(pet.nameRes), MapRound.POINTS_PER_CAPTURE
+        )
+        captureToast.isVisible = true
 
         val animSet = AnimationSet(true)
 
@@ -320,53 +388,42 @@ class ChangeObjectFragment : Fragment() {
 
         captureToast.startAnimation(animSet)
 
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (isAdded) {
-                captureToast.visibility = View.GONE
-            }
-        }, 1700)
+        handler.removeCallbacks(hideCaptureToast)
+        handler.postDelayed(hideCaptureToast, 1700)
     }
 
     /**
-     * Interface JavaScript chamada pelo mapa quando
-     * um pet é tocado/clicado.
+     * Abre o encontro apenas para marcadores da partida atual.
      */
-    inner class MapJsInterface {
-
+    inner class MapJsInterface(private val webView: WebView) {
         @JavascriptInterface
-        fun capturarPet(nome: String, arquivo: String) {
-            Handler(Looper.getMainLooper()).post {
-                if (!isAdded) return@post
-
-                score++
-                scoreValue.text = score.toString()
-
-                tocarSomCaptura()
-                exibirAnimacaoCaptura(nome)
-
-                Toast.makeText(
-                    requireContext(),
-                    "🐾 $nome capturado! Pontos: $score",
-                    Toast.LENGTH_SHORT
-                ).show()
+        fun abrirEncontro(roundId: String, petId: Int) {
+            handler.post {
+                val views = binding ?: return@post
+                val round = sharedViewModel.mapRound ?: return@post
+                if (views.mapWebView !== webView || round.id != roundId || views.encounterOverlay.isVisible) {
+                    return@post
+                }
+                if (round.openEncounter(petId)) atualizarTela(views, round)
             }
         }
     }
 
-    /**
-     * Dados de cada tipo de pet no mapa.
-     */
-    data class PetInfo(
-        val emoji: String,
-        val nome: String,
-        val arquivo: String,
-        val cor: String
-    )
-
     override fun onDestroyView() {
-        super.onDestroyView()
+        val views = binding
+        binding = null
+        handler.removeCallbacks(hideCaptureToast)
+        views?.treatIcon?.animate()?.cancel()
         mediaPlayer?.release()
         mediaPlayer = null
-        mapWebView.destroy()
+        views?.mapWebView?.let {
+            (it.parent as? ViewGroup)?.removeView(it)
+            it.destroy()
+        }
+        super.onDestroyView()
+    }
+
+    private companion object {
+        const val PET_APPROACH_CHANCE = 0.4
     }
 }
