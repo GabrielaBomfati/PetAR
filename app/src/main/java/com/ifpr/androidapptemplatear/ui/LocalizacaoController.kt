@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.Typeface
 import android.location.Geocoder
 import android.location.Location
 import android.location.LocationListener
@@ -26,7 +27,9 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LiveData
 import androidx.lifecycle.lifecycleScope
+import com.ifpr.androidapptemplatear.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -40,7 +43,8 @@ class LocalizacaoController(
 
     private data class Lugar(
         val latitude: Double,
-        val longitude: Double
+        val longitude: Double,
+        val endereco: String
     )
 
     companion object {
@@ -59,22 +63,37 @@ class LocalizacaoController(
      * O raio é calculado a partir de cada coordenada.
      */
     private val lugares = listOf(
-        // Catedral Sant'Ana
+        // Praça pública em frente à Catedral Sant'Ana.
         Lugar(
-            latitude = -25.097922,
-            longitude = -50.159264
+            latitude = -25.097832,
+            longitude = -50.158968,
+            endereco = "Praça Marechal Floriano Peixoto, Centro, Ponta Grossa – PR"
         ),
 
-        // Igreja dos Polacos
+        // Praça da Igreja dos Polacos.
         Lugar(
-            latitude = -25.094904,
-            longitude = -50.163075
+            latitude = -25.094880,
+            longitude = -50.162660,
+            endereco = "Praça Barão de Guaraúna, Centro, Ponta Grossa – PR"
         ),
 
-        // Parque Estadual de Vila Velha
+        // Centro de Visitantes do Parque Estadual de Vila Velha.
         Lugar(
-            latitude = -25.246243,
-            longitude = -50.021782
+            latitude = -25.246332,
+            longitude = -50.021038,
+            endereco = "Parque Estadual de Vila Velha, BR-376, Ponta Grossa – PR"
+        ),
+        // Mansão Vila Hilda.
+        Lugar(
+            latitude = -25.091750,
+            longitude = -50.162030,
+            endereco = "Rua Júlia Wanderley, 936, Centro, Ponta Grossa – PR"
+        ),
+        // Cine-Teatro Ópera.
+        Lugar(
+            latitude = -25.096472,
+            longitude = -50.160139,
+            endereco = "Rua XV de Novembro, 468, Centro, Ponta Grossa – PR"
         )
     )
 
@@ -88,7 +107,7 @@ class LocalizacaoController(
     private var aoEncontrarModelo: ((String) -> Unit)? = null
 
     private var modelos: List<String> = emptyList()
-    private var lugarAtual: Lugar? = null
+    private var visita: EstadoVisita? = null
 
     private var monitorando = false
     private var enderecoAtual: String? = null
@@ -114,8 +133,10 @@ class LocalizacaoController(
         }
     }
 
-    fun conectar(
+    internal fun conectar(
         parent: ViewGroup,
+        pontuacao: LiveData<Int>,
+        visita: EstadoVisita,
         aoEncontrar: (String) -> Unit
     ) {
         check(owner == null) {
@@ -125,6 +146,7 @@ class LocalizacaoController(
         val context = fragment.requireContext()
 
         owner = fragment.viewLifecycleOwner
+        this.visita = visita
         aoEncontrarModelo = aoEncontrar
 
         manager = context.getSystemService(
@@ -140,7 +162,7 @@ class LocalizacaoController(
                 ?: emptyList()
         }.getOrDefault(emptyList())
 
-        criarPainel(parent)
+        criarPainel(parent, pontuacao)
 
         owner?.lifecycle?.addObserver(this)
     }
@@ -148,7 +170,7 @@ class LocalizacaoController(
     /**
      * Cria o painel por código, sem alterar os layouts XML.
      */
-    private fun criarPainel(parent: ViewGroup) {
+    private fun criarPainel(parent: ViewGroup, pontuacao: LiveData<Int>) {
         val context = fragment.requireContext()
 
         val painel = LinearLayout(context).apply {
@@ -189,7 +211,23 @@ class LocalizacaoController(
             }
         }
 
+        painel.addView(TextView(context).apply {
+            setText(R.string.current_address)
+            textSize = 12f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.LTGRAY)
+        })
         painel.addView(enderecoView)
+        painel.addView(TextView(context).apply {
+            textSize = 20f
+            setPadding(0, dp(8), 0, 0)
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor("#FFCD72"))
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+            pontuacao.observe(fragment.viewLifecycleOwner) { pontos ->
+                text = context.getString(R.string.location_score, pontos)
+            }
+        })
         painel.addView(botao)
 
         val layer = FrameLayout(context).apply {
@@ -258,6 +296,7 @@ class LocalizacaoController(
         botao = null
 
         aoEncontrarModelo = null
+        visita = null
         manager = null
         this.owner = null
 
@@ -398,31 +437,32 @@ class LocalizacaoController(
      * Utiliza as coordenadas internamente, sem exibi-las na tela.
      */
     private fun verificarLugares(location: Location) {
-        lugarAtual?.let { lugar ->
+        val estado = visita ?: return
+        estado.lugarAtual?.let { indice ->
             // Mantém o mesmo encontro enquanto não sair dos 125 m.
-            if (distancia(location, lugar) <= RAIO_SAIDA) {
+            if (distancia(location, lugares[indice]) <= RAIO_SAIDA) {
                 return
             }
 
-            lugarAtual = null
+            estado.lugarAtual = null
         }
 
-        val lugarEncontrado = lugares
-            .filter { lugar ->
-                distancia(location, lugar) <= RAIO_ENTRADA
-            }
-            .minByOrNull { lugar ->
-                distancia(location, lugar)
-            }
-            ?: return
+        val indice = indiceMaisProximo(location) ?: return
 
         if (modelos.isEmpty()) return
 
-        lugarAtual = lugarEncontrado
+        estado.lugarAtual = indice
 
         // Não exibe mensagens sobre o objeto ou o local.
         aoEncontrarModelo?.invoke(modelos.random())
     }
+
+    private fun indiceMaisProximo(location: Location): Int? =
+        lugares.indices
+            .map { indice -> indice to distancia(location, lugares[indice]) }
+            .filter { (_, metros) -> metros <= RAIO_ENTRADA }
+            .minByOrNull { (_, metros) -> metros }
+            ?.first
 
     private fun distancia(
         location: Location,
@@ -467,6 +507,14 @@ class LocalizacaoController(
         instanteConsultaEndereco = agora
 
         val context = fragment.requireContext().applicationContext
+        val enderecoAproximado = if (location.hasAccuracy() && location.accuracy <= PRECISAO_MAXIMA) {
+            indiceMaisProximo(location)?.let { indice ->
+                context.getString(R.string.approximate_address, lugares[indice].endereco)
+            }
+        } else {
+            null
+        }
+        enderecoAproximado?.let { enderecoView?.text = it }
 
         enderecoJob = owner?.lifecycleScope?.launch {
             val endereco = withContext(Dispatchers.IO) {
@@ -502,7 +550,7 @@ class LocalizacaoController(
                 }
             }
 
-            enderecoAtual = endereco
+            enderecoAtual = endereco ?: enderecoAproximado
 
             enderecoView?.text = enderecoAtual
                 ?: "Endereço atual indisponível."

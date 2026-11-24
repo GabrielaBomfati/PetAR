@@ -2,6 +2,7 @@ package com.ifpr.androidapptemplatear
 
 import com.ifpr.androidapptemplatear.ui.MapRound
 import com.ifpr.androidapptemplatear.ui.PetType
+import com.ifpr.androidapptemplatear.ui.PontuacaoPartida
 import com.ifpr.androidapptemplatear.ui.ThrowResult
 import org.junit.Test
 
@@ -16,6 +17,32 @@ class ExampleUnitTest {
     @Test
     fun addition_isCorrect() {
         assertEquals(4, 2 + 2)
+    }
+
+    @Test
+    fun geographicModelsScoreOnceAndShareTheMapRound() {
+        val publishedScores = mutableListOf<Int>()
+        val placar = PontuacaoPartida { publishedScores.add(it) }
+        placar.registrarModelo("gato_g.glb")
+        placar.registrarModelo("gato_g.glb")
+        placar.registrarModelo("golden.glb")
+        assertEquals(listOf(100, 200), publishedScores)
+
+        val mapa = MapRound(-25.091750, -50.162030, placar)
+        assertEquals(200, mapa.score)
+        assertTrue(mapa.openEncounter(mapa.pets.first().id))
+        assertEquals(ThrowResult.CAPTURED, mapa.throwTreat(petApproached = true))
+        assertEquals(300, mapa.score)
+
+        assertTrue(mapa.openEncounter(mapa.pets.first().id))
+        repeat(3) { mapa.throwTreat(petApproached = false) }
+        assertTrue(placar.encerrada)
+        placar.registrarModelo("neutrofilo.glb")
+        assertEquals(listOf(100, 200, 300), publishedScores)
+
+        placar.reiniciar()
+        placar.registrarModelo("gato_g.glb")
+        assertEquals(listOf(100, 200, 300, 0, 100), publishedScores)
     }
 
     @Test

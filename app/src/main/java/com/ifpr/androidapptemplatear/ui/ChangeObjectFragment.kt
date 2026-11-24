@@ -150,8 +150,7 @@ class ChangeObjectFragment : Fragment() {
 
     private fun iniciarPartida(lat: Double, lng: Double) {
         val views = binding ?: return
-        val round = MapRound(lat, lng)
-        sharedViewModel.mapRound = round
+        val round = sharedViewModel.iniciarMapa(lat, lng)
         carregarMapa(views.mapWebView, round)
         atualizarTela(views, round)
     }
@@ -366,7 +365,7 @@ class ChangeObjectFragment : Fragment() {
     private fun exibirAnimacaoCaptura(views: FragmentChangeobjectBinding, pet: PetType) {
         val captureToast = views.captureToast
         captureToast.text = getString(
-            R.string.pet_captured, getString(pet.nameRes), MapRound.POINTS_PER_CAPTURE
+            R.string.pet_captured, getString(pet.nameRes), PontuacaoPartida.PONTOS_POR_ACAO
         )
         captureToast.isVisible = true
 

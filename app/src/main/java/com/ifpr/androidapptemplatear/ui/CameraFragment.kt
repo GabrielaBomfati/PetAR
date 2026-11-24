@@ -92,7 +92,7 @@ class CameraFragment : Fragment() {
     private var arTracking = false
     private var cameraStreaming = false
 
-    private var currentModelFile = "neutrofilo.glb"
+    private var currentModelFile = "golden.glb"
     private var captureSound: MediaPlayer? = null
 
     private lateinit var sharedViewModel: SharedModelViewModel
@@ -175,20 +175,29 @@ class CameraFragment : Fragment() {
         val parent = container?.parent as? ViewGroup
 
         if (parent != null) {
-            localizacaoController.conectar(parent) { arquivo ->
-                sharedViewModel.selectModel(arquivo)
-            }
+            localizacaoController.conectar(
+                parent,
+                sharedViewModel.pontuacao,
+                sharedViewModel.visitaLocalizacao,
+                sharedViewModel::registrarEncontro
+            )
 
             placeButton?.bringToFront()
         }
     }
 
     private fun mostrarDialogoEscolherPet() {
-        val nomes = arrayOf("🐱 Gato", "🐕 Golden", "🐶 Cachorro", "🔬 Neutrófilo")
-        val arquivos = arrayOf("gato_g.glb", "golden.glb", "cachorro_g.glb", "neutrofilo.glb")
+        val modelos = listOf(
+            "gato_g.glb" to "🐱 Gato",
+            "golden.glb" to "🐕 Golden",
+            "cachorro_g.glb" to "🐶 Cachorro",
+            "neutrofilo.glb" to "🔬 Neutrófilo"
+        ).filter { (arquivo, _) -> modelLocation(arquivo) != null }
         AlertDialog.Builder(requireContext())
             .setTitle("Escolher Pet")
-            .setItems(nomes) { _, index -> sharedViewModel.selectModel(arquivos[index]) }
+            .setItems(modelos.map { it.second }.toTypedArray()) { _, index ->
+                sharedViewModel.selectModel(modelos[index].first)
+            }
             .show()
     }
 

@@ -23,6 +23,9 @@
         <item quantity="other">%d tentativas restantes</item>
     </plurals>
     <string name="map_score_label">🐾 Pontos</string>
+    <string name="location_score">Pontos: %d</string>
+    <string name="current_address">Endereço atual</string>
+    <string name="approximate_address">Próximo a %1$s</string>
     <string name="pet_captured">🎉 %1$s capturado! +%2$d pontos</string>
     <string name="game_over_title">Game Over</string>
     <string name="game_over_reason">%1$s fugiu após %2$d tentativas sem se aproximar do petisco.</string>
